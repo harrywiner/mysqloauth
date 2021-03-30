@@ -11,13 +11,17 @@ var dotenv = require('dotenv');
 dotenv.config();
 var session = require('express-session');
 
-const port = process.env.PORT || 8000;
+var { graphqlHTTP } = require('express-graphql');
+var { buildSchema } = require('graphql');
+const { countReset } = require("console");
+
+const port = process.env.PORT || 3333;
 
 var client_id = process.env.CLIENT_ID; // Your client id
 var client_secret = process.env.CLIENT_SECRET; // Your secret
 var redirect_uri = process.env.REDIRECT_URI; // Your redirect uri
 
-var stateKey = 'spotify_auth_state';
+var stateKey = '';
 
 
 // https://vast-castle-09510.herokuapp.com/
@@ -29,8 +33,8 @@ app.use(express.static(__dirname + "/public"))
   .use(cors())
   .use(cookieParser());
 
-console.log("Listening on " + port);
-app.listen(port);
+
+app.listen(port, () => console.log("Listening on " + port));
 
 var secret = tools.generateRandomString(16);
 
@@ -46,74 +50,128 @@ if (app.get('env') === 'production') {
 }
 app.use(session(sess));
 
-app.get("/count-total-plays", function (req, res) {
-  var dbPromise = tools.DBConnect("spotify");
+// GRAPHQL
 
-  dbPromise.then((connection) => {
-    var countPromise = tools.CountPlays(connection);
+var dummyData = [
+  {
+    email: "winer.harry at gmail.com",
+    pwd: "password",
+    type: 1
+  },
+  {
+    email: "emma at emms.io",
+    pwd: "gradydog",
+    type: 1
+  },
+  {
+    email: "alice.lankester at gmail.com",
+    pwd: "secret",
+    type: 0
+  },
+  {
+    email: "winer.peter at gmail.com",
+    pwd: "ILoveDrampa",
+    type: 0
+  }
+]
 
-    countPromise.then((count) => {
-      res.send({
-        playCount: count,
-      });
+// build schema
+// 
+var schema = buildSchema(`
+  type Query {
+    message: String
+    getPrivelage(type: Int!): [User]
+    getUser(email: String!): User
+  }, 
+  type Mutation {
+    resetPassword(email: String!, pwd: String!, newpwd: String!): User
+  },
+  type User {
+    email: String
+    pwd: String
+    type: Int
+  }
+`)
 
-      connection.end();
+// methods
+function getUser(args) {
+  var email = args.email
+  return dummyData.filter(user => {
+    return user.email === email;
+  })[0]
+}
 
-      return;
-    });
-  });
-});
+function getUsersByPrivelage(args) {
+  var type = args.type
+  return dummyData.filter(user => {
+    return user.type == type
+  })
+}
 
-app.get("/most-played", function (req, res) {
-  var dbPromise = tools.DBConnect("spotify");
+function changePwd({ email, pwd, newpwd }) {
+  dummyData.map(user => {
+    if (user.email === email && user.pwd == pwd) {
+      user.pwd = newpwd
+      return user
+    }
+  })
 
-  console.log("Offset: " + req.query.offset);
-  console.log("Limit: " + req.query.limit);
+  return dummyData.filter(user => {
+    return user.email === email
+  })[0]
+}
 
-  dbPromise.then((connection) => {
-    var playPromise = tools.MostPlayed(
-      connection,
-      parseInt(req.query.limit),
-      parseInt(req.query.offset)
-    );
+// root resolver
+var root = {
+  message: () => { console.log("hello world"); return 'Hello World!' },
+  getUser: getUser,
+  getPrivelage: getUsersByPrivelage,
+  resetPassword: changePwd
+}
 
-    playPromise.then((plays) => {
-      res.send({
-        mostPlayed: plays,
-      });
+app.use('/graphql', graphqlHTTP({
+  schema: schema,
+  rootValue: root,
+  graphiql: true
+}))
 
-      connection.end();
 
-      return;
-    });
-  });
-});
+function getQL() {
+  email = "winer.harry at gmail.com"
+  query = `
+    query getUserByEmail($email: String!) {
+      getUser(email: $email) {
+          email
+          pwd
+          type
+      }
+    }`
+  request.post('http://localhost:3333/graphql',
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({ query, variables: { email } })
+    }, (error, response, body) => {
+      console.log("data returned" + body)
 
-app.get("/play-time", function (req, res) {
-  var dbPromise = tools.DBConnect("spotify");
+    })
+}
 
-  console.log("Offset: " + req.query.offset);
-  console.log("Limit: " + req.query.limit);
+getQL()
 
-  dbPromise.then((connection) => {
-    var playPromise = tools.PlayTime(
-      connection,
-      parseInt(req.query.limit),
-      parseInt(req.query.offset)
-    );
 
-    playPromise.then((plays) => {
-      console.log(JSON.stringify(plays));
-      res.send({
-        playTime: plays,
-      });
 
-      connection.end();
+// API
 
-      return;
-    });
-  });
-});
+app.get('/', (req, res) => {
+  res.send("Hello World!")
+})
+
+app.post('/helloWorld', (req, res) => {
+  res.send({ message: "Hello " + req.query.name })
+})
 
 // START OF AUTH
 
@@ -150,6 +208,7 @@ app.get('/callback', function (req, res) {
       }));
   } else {
     res.clearCookie(stateKey);
+    // TODO
     var authOptions = {
       url: 'https://accounts.spotify.com/api/token',
       form: {
@@ -170,6 +229,7 @@ app.get('/callback', function (req, res) {
           refresh_token = body.refresh_token;
 
         var options = {
+          // TODO
           url: 'https://api.spotify.com/v1/me',
           headers: { 'Authorization': 'Bearer ' + access_token },
           json: true
@@ -201,57 +261,3 @@ app.get('/callback', function (req, res) {
 });
 
 
-app.get("/most-recent", async (req, res) => {
-  refresh_token = req.session.refresh_token
-  if (refresh_token) {
-    track = await tools.MostRecent(refresh_token)
-    res.send(track)
-  }
-  else {
-    console.log("Most Recent: refresh token missing!")
-    res.send()
-  }
-
-})
-
-app.get("/currently-playing", async (req, res) => {
-  refresh_token = req.session.refresh_token
-  if (refresh_token) {
-    track = await tools.CurrentlyPlaying(refresh_token)
-    res.send(track)
-  }
-  else {
-    console.log("Currently playing: refresh token missing!")
-    res.send()
-  }
-})
-app.get('/current-or-recent', async (req, res) => {
-  refresh_token = req.session.refresh_token
-  if (refresh_token) {
-    current = await tools.CurrentlyPlaying(refresh_token)
-    if (current) {
-      res.send(current)
-    } else {
-      recent = await tools.MostRecent(refresh_token)
-      if (!recent) {
-        throw new Error("You have never listened to a song before")
-      }
-      res.send(recent)
-    }
-  } else {
-    console.log("Currently playing: refresh token missing!")
-    res.send()
-  }
-
-})
-
-app.get('/get-album-cover', async (req, res) => {
-  if (req.session.refresh_token) {
-    token = req.session.refresh_token
-    track = await tools.GetAlbumCovers(token)
-    res.send(track)
-  } else {
-    res.send({ error: "access token missing" })
-  }
-
-})

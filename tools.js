@@ -183,46 +183,9 @@ module.exports = {
     });
   },
 
-  GetMostRecentPlayDate: function (connection) {
-    return new Promise((resolve, reject) => {
-      var query = "SELECT playedAt FROM play ORDER BY playedAt DESC LIMIT 1";
 
-      connection.query(query, function (err, result) {
-        if (err) {
-          console.log("Row getting Most Recent Play Date: " + err.errno);
 
-          resolve(0);
-        } else {
-          //const d = new Date(result[0].playedAt);
-          resolve(new Date(result[0].playedAt));
-        }
-      });
-    });
-  },
 
-  GetRecents: function (access_token) {
-    // Setting URL and headers for request
-
-    var options = {
-      url: "https://api.spotify.com/v1/me/player/recently-played?limit=50",
-      headers: { Authorization: "Bearer " + access_token },
-      json: true,
-    };
-
-    // Return new promise
-    return new Promise(function (resolve, reject) {
-      // Do async job
-      request.get(options, function (error, response, body) {
-        if (error) {
-          console.log("Error getting recents: " + error);
-          reject(error);
-        } else {
-          console.log(body);
-          resolve(body);
-        }
-      });
-    });
-  },
 
   ReadHistory: function (inputFilename) {
     // Return new promise

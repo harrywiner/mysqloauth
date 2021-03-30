@@ -1,0 +1,32 @@
+h1.display-4 {
+  color: #ffffff;
+}
+
+div.jumbotron {
+  background-color: #1db954;
+  border-radius: 20px;
+}
+
+button.btn-light-green {
+  background-color: #9fdf9f;
+}
+
+thead.thead-green {
+  background-color: #1db954;
+  border-color: #1db954;
+}
+.table-striped > tbody > tr:nth-child(2n + 1) > td,
+.table-striped > tbody > tr:nth-child(2n + 1) > th {
+  background-color: #efffef;
+}
+.table-striped > tbody > tr:nth-child(2n) > td,
+.table-striped > tbody > tr:nth-child(2n) > th {
+  background-color: #ffffff;
+}
+.table-striped > tbody > tr.recents-row {
+  border-top: 1px solid lightgrey;
+  border-bottom: 1px solid lightgrey;
+}
+.table-striped > tbody > tr.selected > td {
+  background-color: #9fdf9f;
+}
