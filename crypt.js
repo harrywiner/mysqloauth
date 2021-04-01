@@ -31,12 +31,12 @@ var dummyData = [
     },
     {
         email: "emma at emms.io",
-        pwd: "gradydog",
+        pwd: "BeastFromTheEast",
         type: 1
     },
     {
         email: "alice.lankester at gmail.com",
-        pwd: "secret",
+        pwd: "password123",
         type: 0
     },
     {
@@ -63,49 +63,11 @@ dummyData.map(async (user) => {
 
 // build schema
 // 
-var schema = buildSchema(`
-    type Query {
-      message: String
-      getPrivelage(type: Int!): [User]
-      getUser(email: String!): User
-      checkPassword(email: String!, pwd: String!): Boolean
-    }, 
-    type Mutation {
-      resetPassword(email: String!, pwd: String!, newpwd: String!): User
-      createUser(email: String!, pwd: String!): User
-    },
-    type User {
-      email: String
-      pwd: String
-      type: Int
-    }
-  `)
 
-// methods
 function getUser(args) {
     var email = args.email
     return dummyData.filter(user => {
         return user.email === email;
-    })[0]
-}
-
-function getUsersByPrivelage(args) {
-    var type = args.type
-    return dummyData.filter(user => {
-        return user.type == type
-    })
-}
-
-function changePwd({ email, pwd, newpwd }) {
-    dummyData.map(user => {
-        if (user.email === email && user.pwd == pwd) {
-            user.pwd = newpwd
-            return user
-        }
-    })
-
-    return dummyData.filter(user => {
-        return user.email === email
     })[0]
 }
 
@@ -126,23 +88,31 @@ async function checkHash(password, hash) {
     });
 }
 
+// auth API
 
-// root resolver
-var root = {
-    message: () => { console.log("hello world"); return 'Hello World!' },
-    getUser: getUser,
-    getPrivelage: getUsersByPrivelage,
-    resetPassword: changePwd,
-    checkPassword: checkPassword
+function GenerateToken(data) {
+    return new Promise((resolve, reject) => {
+        resolve(jwt.sign({ id: data }, pair.private, {
+            expiresIn: 86400, // expires in 24 hours
+            algorithm: 'RS256'
+        }))
+    })
 }
 
-app.use('/graphql', graphqlHTTP({
-    schema: schema,
-    rootValue: root,
-    graphiql: true
-}))
 
-// auth API
+app.post('/login', async function (req, res) {
+    email = req.headers.email
+    password = req.headers.password
+
+    authorised = checkPassword({ email: email, password: password })
+
+    if (authorised) {
+        token = await GenerateToken(email)
+        res.send({ success: true, token: token })
+    } else {
+        res.send({ success: false, err: "failed to authenticate" })
+    }
+})
 
 app.post('/register', function (req, res) {
 
@@ -174,6 +144,26 @@ app.post('/me', (req, res) => {
 
         res.status(200).send(decoded);
     });
+})
+
+function VerifyToken(req, res, next) {
+    var token = req.headers['authorization'];
+    if (!token)
+        return res.status(403).send({ auth: false, message: 'No token provided.' });
+
+    jwt.verify(token, pair.public, function (err, decoded) {
+        if (err)
+            return res.status(500).send({ auth: false, message: 'Failed to authenticate token.' });
+
+        // if everything good, save to request for use in other routes
+        req.userId = decoded.id;
+        next();
+    });
+}
+
+app.post('/hello', VerifyToken, (req, res) => {
+    myName = req.query.name
+    res.send(`Hello ${myName}!`)
 })
 
 
