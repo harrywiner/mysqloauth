@@ -77,9 +77,10 @@ function checkPassword({ email, pwd }) {
  */
 async function authenticateUser({ email, password }) {
 
+    con = await tools.DBConnect('accounts')
     // TODO replace with graphql 
     return new Promise(async (resolve, reject) => {
-        hash = await sql_tools.GetPasswordHash({ email: email })
+        hash = await GetPasswordHash(email, con)
 
         checkHash(password, hash)
             .then((result) => {
@@ -89,6 +90,23 @@ async function authenticateUser({ email, password }) {
             })
     })
 
+}
+
+async function GetPasswordHash(email, con) {
+    query = `SELECT (password) from users where email like ?`
+    inputs = [email]
+    query = con.format(query, inputs)
+    return new Promise((resolve, reject) => {
+        con.query(query, (err, results, fields) => {
+            if (err)
+                throw err
+            if (results[0]) {
+                resolve(results[0].password)
+            } else {
+                throw new Error("user not found")
+            }
+        })
+    })
 }
 
 async function userExists(email, con) {

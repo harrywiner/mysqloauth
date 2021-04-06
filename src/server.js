@@ -46,8 +46,7 @@ if (app.get('env') === 'production') {
 }
 app.use(session(sess));
 
-const { VerifyToken, router, setup } = require('./crypt')
-setup({ options })
+const { VerifyToken, router } = require('./crypt')
 app.use('/auth', router)
 
 
