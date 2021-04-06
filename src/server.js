@@ -11,10 +11,6 @@ var dotenv = require('dotenv');
 dotenv.config();
 var session = require('express-session');
 
-var { graphqlHTTP } = require('express-graphql');
-var { buildSchema } = require('graphql');
-const { countReset } = require("console");
-
 const port = process.env.PORT || 3333;
 
 var client_id = process.env.CLIENT_ID; // Your client id
@@ -50,7 +46,9 @@ if (app.get('env') === 'production') {
 }
 app.use(session(sess));
 
-
+const { VerifyToken, router, setup } = require('./crypt')
+setup({ options })
+app.use('/auth', router)
 
 
 // API
@@ -129,7 +127,6 @@ app.get('/callback', function (req, res) {
         request.get(options, function (error, response, body) {
           //console.log(body);
         });
-
 
         req.session.access_token = access_token;
         req.session.refresh_token = refresh_token;

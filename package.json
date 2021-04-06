@@ -13,6 +13,7 @@
     "express-graphql": "^0.12.0",
     "express-session": "^1.17.1",
     "graphql": "^15.5.0",
+    "jest": "^26.6.3",
     "jsonwebtoken": "^8.5.1",
     "keypair": "^1.0.2",
     "moment": "^2.27.0",
@@ -27,11 +28,12 @@
   "main": "server.js",
   "devDependencies": {},
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "debug": "nodemon server.js",
-    "start": "node server.js",
-    "db": "node setupdb.js",
-    "crypt": "nodemon crypt.js"
+    "test": "jest",
+    "debug": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "db": "node src/setupdb.js",
+    "crypt": "nodemon src/crypt.js",
+    "sql": "nodemon src/sql.js"
   },
   "repository": {
     "type": "git",
