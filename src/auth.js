@@ -3,148 +3,58 @@ const saltRounds = 10
 const express = require('express')
 var jwt = require('jsonwebtoken');
 var app = express()
-const PORT = 4444
+const PORT = 5647
 app.use(express.static(__dirname + "/public"))
 
-app.listen(PORT, () => console.log("Listening on " + PORT));
+// const fs = require('fs')
+// const util = require('util')
+// var pair = {}
+// new Promise(async (resolve, reject) => {
+//     const readFile = util.promisify(fs.readFile)
+//     private = await readFile(__dirname + '/../keys/jack-auth', 'utf8')
+//     public = await readFile(__dirname + '/../keys/jack-auth.pub', 'utf8')
+//     resolve({ private, public })
+// }).then((data) => {
+//     pair = data
+//     if (pair.private && pair.public)
+//         console.log("success!")
+//     else
+//         console.log("key failure")
+// }).catch(err => {
+//     console.log(err)
+// })
 
-var { graphqlHTTP } = require('express-graphql');
-var { buildSchema } = require('graphql');
-const { check } = require('yargs');
+const keypair = require('keypair');
+const pair = keypair()
 
-var keypair = require('keypair');
-const pair = keypair();
 require('dotenv').config();
 
 
 const tools = require('./tools')
-const sql_tools = require('./sql')
-
-
-
-// GRAPHQL
-
-var dummyData = [
-    {
-        email: "winer.harry at gmail.com",
-        pwd: "password",
-        type: 1
-    },
-    {
-        email: "emma at emms.io",
-        pwd: "BeastFromTheEast",
-        type: 1
-    },
-    {
-        email: "alice.lankester at gmail.com",
-        pwd: "password123",
-        type: 0
-    },
-    {
-        email: "winer.peter at gmail.com",
-        pwd: "ILoveDrampa",
-        type: 0
-    }
-]
-
-// GRAPHQL
-
-// build schema
-// 
-
-function getUser(args) {
-    var email = args.email
-    return dummyData.filter(user => {
-        return user.email === email;
-    })[0]
-}
-
-function checkPassword({ email, pwd }) {
-
-    return (typeof dummyData.filter(user => {
-        if (user.email === email) {
-            if (checkHash(pwd, user.pwd)) {
-                return true
-            }
-        }
-    })[0] != undefined)
-}
-
 
 /**
  * SQL version, may change to connect itself
  * @param {email, password} email and password in **plaintext** 
+ * @returns {authenticated: bool, reason: String}
+ * If the user is not authenticated the reason will state why 
  */
 async function authenticateUser({ email, password }) {
 
     con = await tools.DBConnect('accounts')
     // TODO replace with graphql 
     return new Promise(async (resolve, reject) => {
-        hash = await GetPasswordHash(email, con)
-
-        checkHash(password, hash)
-            .then((result) => {
-                resolve(result)
-            }).catch(err => {
-                reject(err)
-            })
-    })
-
-}
-
-async function GetPasswordHash(email, con) {
-    query = `SELECT (password) from users where email like ?`
-    inputs = [email]
-    query = con.format(query, inputs)
-    return new Promise((resolve, reject) => {
-        con.query(query, (err, results, fields) => {
+        tools.getUser(email).then(({ err, user }) => {
             if (err)
                 throw err
-            if (results[0]) {
-                resolve(results[0].password)
-            } else {
-                throw new Error("user not found")
-            }
-        })
-    })
-}
-
-async function userExists(email, con) {
-    query = `SELECT * from users where email like ?`
-    inputs = [email]
-    query = con.format(query, inputs)
-
-    return new Promise((resolve, reject) => {
-        con.query(query, (err, results, fields) => {
-            if (err) {
-                reject(error)
-            }
-            if (results[0]) {
-                resolve(true)
-            } else {
-                resolve(false)
-            }
-        })
-    })
-}
-
-function SQLInsertUser({ email, hash }) {
-    return new Promise((resolve, reject) => {
-        query = `insert into users (email, password) values (?, ?);`
-        inputs = [email, hash]
-        query = con.format(query, inputs)
-        con.query(query, function (error, results, fields) {
-            if (error) {
-                throw error
-            }
-
-            if (results.affectedRows === 1) {
-                // if the data has been entered successfully
-                resolve({ success: true, userID: results.insertId })
-            } else {
-                reject({ success: false, err: "row mismatch in createUser" })
-            }
-
+            else if (!user)
+                resolve({ authenticated: false, reason: "user not found" })
+            else
+                checkHash(password, user.password)
+                    .then((result) => {
+                        resolve({ authenticated: true, reason: "" })
+                    }).catch(err => {
+                        throw err
+                    })
         })
     })
 
@@ -159,15 +69,15 @@ async function createUser({ email, password }, options) {
     con = await tools.DBConnect("accounts")
     return new Promise(async (resolve, reject) => {
         // TODO replace with graphql
-        exists = await userExists(email, con)
-        if (exists) {
+        user = await tools.getUser(email)
+        if (!user) {
             reject({ success: false, err: "Email already exists" })
         } else {
             bcrypt.hash(password, saltRounds, async function (err, hash) {
                 if (err)
                     throw err
                 // TODO GraphQL insertUser query
-                result = await SQLInsertUser({ email, hash })
+                result = await tools.InsertUser({ email, hash })
                 if (result.success) {
                     resolve(result)
                 } else {
@@ -244,22 +154,46 @@ app.post('/register', async function (req, res) {
             res.status(200).send({ auth: true, token: token });
         }
     }).catch((result) => {
-        console.log("error in /register" + result.err)
+        console.log("error in /register: " + result.err)
         res.send({ success: false, err: result.err })
     })
 });
 
 
-app.post('/me', (req, res) => {
-    var token = req.headers['authorization'];
-    if (!token) return res.status(401).send({ auth: false, message: 'No token provided.' });
+// PASSPORT 
+const LocalStrategy = require('passport-local').Strategy
 
-    jwt.verify(token, pair.public, { algorithms: ['RS256'] }, function (err, decoded) {
-        if (err) return res.status(500).send({ auth: false, message: 'Failed to authenticate token.' });
+function PassportConfig(passport) {
+    passport.use(new LocalStrategy({
+        usernameField: 'email',
+    },
+        async function (email, password, done) {
+            console.log("in passport verify")
+            tools.getUser(email).then(async ({ err, user }) => {
+                if (!(typeof err != null)) {
+                    return done(err);
+                }
+                if (!user) { return done(null, false); }
+                if (await checkHash(password, user.password)) {
+                    return done(null, user)
+                }
+                return done(null, false)
+            }).catch(err => console.log("Passport-local Error: " + err.message))
+        }
+    ));
 
-        res.status(200).send(decoded);
+    passport.serializeUser(function (user, done) {
+        done(null, user.id);
     });
-})
+
+    passport.deserializeUser(function (id, done) {
+        tools.getUserByID(id).then(({ err, user }) => {
+            done(err, user)
+        })
+    });
+}
+
+// TODO implement authorisation bearer https://developer.okta.com/blog/2018/08/21/build-secure-rest-api-with-node
 
 function VerifyToken(req, res, next) {
     var token = req.headers['authorization'];
@@ -276,20 +210,45 @@ function VerifyToken(req, res, next) {
     });
 }
 
+// put as second parameter before guarded page
+function EnsureAuthenticated(req, res, next) {
+    if (req.isAuthenticated()) {
+        return next();
+    }
+    res.redirect('/login');
+}
+// put at login to check if user is already logged in 
+function ForwardAuthenticated(req, res, next) {
+    if (!req.isAuthenticated()) {
+        return next();
+    }
+    res.redirect('/dashboard');
+}
+
+// if the user is authenticated then assign their session a token
+async function AssignToken(req, res, next) {
+    if (!req.isAuthenticated())
+        return next()
+
+    var id = req.session.passport.user
+    var token = await GenerateToken(id).catch(err => console.log("error creating token"))
+    req.session.token = token
+    return next()
+}
+
 app.post('/hello', VerifyToken, (req, res) => {
     myName = req.query.name
     res.send(`Hello ${myName}!`)
 })
 
-
-
-
-
-
-
-
-
 module.exports = {
-    VerifyToken: VerifyToken,
-    router: app
+    VerifyToken,
+    router: app,
+    PORT,
+    PassportConfig,
+    EnsureAuthenticated,
+    ForwardAuthenticated,
+    AssignToken
 }
+
+app.listen(PORT, () => console.log("Auth listening on " + PORT));
